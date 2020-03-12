@@ -6,4 +6,6 @@ fi
 DURATION=$1
 DELAY_TIME=$2
 NODE_NAME=$3
+
+echo "Program started..."
 sudo pumba netem --duration ${DURATION}s --interface eth0 --tc-image 'gaiadocker/iproute2' delay --time $DELAY_TIME $NODE_NAME

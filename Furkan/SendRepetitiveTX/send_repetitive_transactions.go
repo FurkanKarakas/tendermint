@@ -6,10 +6,9 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
-
-	"github.com/prometheus/common/log"
 )
 
 var randChars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -24,7 +23,7 @@ func randSeq(n int) string {
 }
 
 // Sends transactions
-func sendTX(wg *sync.WaitGroup, portNr *string, TXSize *int) {
+func sendTX(wg *sync.WaitGroup, portNr *string, TXSize *int, throughput *int) {
 	defer wg.Done() // Decrement by 1 after function returns.
 	resp, err := http.Get("http://127.0.0.1:" + *portNr + "/broadcast_tx_commit?tx=\"" + randSeq(*TXSize) + "\"")
 	if err != nil {
@@ -38,7 +37,14 @@ func sendTX(wg *sync.WaitGroup, portNr *string, TXSize *int) {
 			panic(err)
 		}
 		bodyString := string(bodyBytes)
-		log.Info(bodyString)
+		if strings.Contains(bodyString, "error") {
+			fmt.Println(bodyString)
+			if strings.Contains(bodyString, "timed out waiting for tx to be included in a block") {
+				*throughput++
+			}
+		} else {
+			*throughput++
+		}
 	}
 }
 
@@ -52,13 +58,23 @@ func main() {
 	flag.Parse()
 
 	var wg sync.WaitGroup
+	throughput := 0
+	t1 := time.Now()
 
 	for i := 0; i < *TXNr; i++ {
 		wg.Add(1)
-		go sendTX(&wg, portNr, TXSize)
+		go sendTX(&wg, portNr, TXSize, &throughput)
 		fmt.Println("Sleeping", *TXTime, "milliseconds...", i+1)
 		time.Sleep(time.Duration(*TXTime) * time.Millisecond)
 	}
 
 	wg.Wait()
+	t2 := time.Now()
+	timediff := t2.Sub(t1)
+
+	throughputReal := float64(throughput) / float64(*TXNr) * 100
+	TXperS := float64(throughput) / timediff.Seconds()
+
+	fmt.Printf("Valid TX ratio: %.2f%%\n", throughputReal)
+	fmt.Printf("Total Throughput: %.2f\n", TXperS)
 }
